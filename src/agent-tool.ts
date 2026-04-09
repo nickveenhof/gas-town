@@ -96,52 +96,65 @@ export function createAgentTool(
           return `[gas-town] Prompt error: ${promptResult.error}`;
         }
 
-        // Wait for completion by polling session messages
-        const maxWait = 300000; // 5 minutes
-        const pollInterval = 2000;
-        let elapsed = 0;
+        // Poll for completion using session.status() + stable message count
+        // (same pattern as oh-my-openagent's waitForCompletion)
+        const POLL_INTERVAL = 500;
+        const MAX_WAIT = 5 * 60 * 1000;
+        const pollStart = Date.now();
+        let lastMsgCount = 0;
+        let stablePolls = 0;
+        const STABILITY_REQUIRED = 3;
 
-        while (elapsed < maxWait) {
+        while (Date.now() - pollStart < MAX_WAIT) {
           if (toolContext.abort.aborted) {
-            return `[gas-town] Task aborted after ${elapsed}ms`;
+            return `[gas-town] Task aborted. Session: ${sessionID}`;
           }
 
-          await new Promise((r) => setTimeout(r, pollInterval));
-          elapsed += pollInterval;
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL));
 
-          // Check session status
-          const session = await ctx.client.session.get({
+          // Check if session is idle
+          const statusResult = await (ctx.client.session as any).status();
+          const allStatuses = statusResult?.data ?? statusResult ?? {};
+          const sessionStatus = allStatuses[sessionID];
+
+          if (sessionStatus && sessionStatus.type !== "idle") {
+            stablePolls = 0;
+            lastMsgCount = 0;
+            continue;
+          }
+
+          // Session idle: check message count stability
+          const messagesResult = await ctx.client.session.messages({
             path: { id: sessionID },
           });
+          const msgs: any[] = Array.isArray(messagesResult?.data)
+            ? messagesResult.data
+            : [];
+          const currentCount = msgs.length;
 
-          const sessionData = session.data as any;
-          if (sessionData?.status === "idle" || sessionData?.idle) {
-            // Session completed, get messages
-            const messages = await ctx.client.session.messages({
-              path: { id: sessionID },
-            });
-
-            const msgData = messages.data as any;
-            if (Array.isArray(msgData)) {
-              // Find the last assistant message
-              const assistantMsgs = msgData.filter(
-                (m: any) => m.role === "assistant",
-              );
+          if (currentCount > 0 && currentCount === lastMsgCount) {
+            stablePolls++;
+            if (stablePolls >= STABILITY_REQUIRED) {
+              // Done. Extract last assistant message.
+              const assistantMsgs = msgs.filter((m: any) => m.role === "assistant");
               const lastMsg = assistantMsgs[assistantMsgs.length - 1];
               if (lastMsg?.parts) {
-                const textParts = lastMsg.parts
+                const text = lastMsg.parts
                   .filter((p: any) => p.type === "text")
                   .map((p: any) => p.text)
                   .join("\n");
-                return textParts || "[gas-town] Agent completed but returned no text";
+                return (text || "[gas-town] Agent completed but returned no text") +
+                  `\n\n<task_metadata>\nsession_id: ${sessionID}\n</task_metadata>`;
               }
+              return `[gas-town] Agent completed. Session: ${sessionID}`;
             }
-
-            return "[gas-town] Agent completed but could not read response";
+          } else {
+            stablePolls = 0;
+            lastMsgCount = currentCount;
           }
         }
 
-        return `[gas-town] Agent timed out after ${maxWait}ms. Session: ${sessionID}`;
+        return `[gas-town] Agent timed out after 5 minutes. Session: ${sessionID}`;
       } catch (e: any) {
         return `[gas-town] Error: ${e.message}`;
       }
