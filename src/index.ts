@@ -15,6 +15,7 @@ import {
   createSystemTransformHook,
   createToolExecuteAfterHook,
 } from "./hooks.js";
+import { createAgentTool } from "./agent-tool.js";
 
 const GasTown: Plugin = async (input: PluginInput): Promise<Hooks> => {
   const { directory } = input;
@@ -31,6 +32,11 @@ const GasTown: Plugin = async (input: PluginInput): Promise<Hooks> => {
   }
 
   return {
+    // Custom tool: spawn subagents with per-agent model routing
+    tool: {
+      call_gas_town_agent: createAgentTool(config, input),
+    },
+
     // Model routing: override model per agent based on config
     "chat.params": createChatParamsHook(config),
 
