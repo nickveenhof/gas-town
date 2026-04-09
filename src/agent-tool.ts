@@ -84,8 +84,11 @@ export function createAgentTool(
           return `[gas-town] Session created but no ID returned`;
         }
 
-        // Checkpoint: confirm we reach promptAsync
-        toolContext.metadata({ title: `[gas-town] sending prompt to ${sessionID}`, metadata: { agentName, model } });
+        // Report session ID immediately - before any further work.
+        toolContext.metadata({
+          title: `[gas-town] session ${sessionID} created`,
+          metadata: { sessionID, agentName, model: model ?? null },
+        });
 
         // Send prompt with model override.
         // Do NOT pass agent name for Gas Town custom agents - opencode only
