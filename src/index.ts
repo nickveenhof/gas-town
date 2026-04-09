@@ -1,25 +1,50 @@
 /**
- * Gas Town: Agent-less orchestration infrastructure for OpenCode.
+ * opencode-gitlab-workstream
  *
- * Model routing, identity injection, error recovery.
- * Zero agent opinions. Bring your own agents.
+ * Two plugins in one repo:
  *
- * @see https://github.com/nickveenhof/gas-town
+ * 1. ErrorRecovery  - tool.execute.after hook for JSON truncation and
+ *                     unknown agent type errors. Use in all opencode projects.
+ *
+ * 2. GitLabWorkstream - plan_create + plan_track tools for tracking
+ *                       multi-session agent projects as GitLab issues.
+ *                       Config: gas-town.jsonc → work_tracking section.
+ *
+ * @see https://github.com/nickveenhof/opencode-gitlab-workstream
  */
 
 import type { Plugin, Hooks, PluginInput } from "@opencode-ai/plugin";
 import { createToolExecuteAfterHook } from "./hooks.js";
+import { loadWorkTrackingConfig } from "./config.js";
+import { createPlanTools } from "./plan-tools.js";
 
-const GasTown: Plugin = async (_input: PluginInput): Promise<Hooks> => {
+/**
+ * ErrorRecovery plugin.
+ * Catches JSON truncation errors and unknown agent type errors at runtime,
+ * appends actionable retry guidance to the tool output.
+ */
+const ErrorRecovery: Plugin = async (_input: PluginInput): Promise<Hooks> => {
   return {
-    // Error recovery: JSON truncation + delegate-task retry guidance.
-    // core-rules.md loaded natively via opencode.json "instructions".
-    // Agent identity loaded natively via agents/*.md frontmatter.
-    // Model routing configured natively via agents/*.md frontmatter.
-    // GitLab work tracking handled by opencode-gitlab-workstream plugin.
     "tool.execute.after": createToolExecuteAfterHook(),
   };
 };
 
-export default GasTown;
-export { GasTown };
+/**
+ * GitLabWorkstream plugin.
+ * Registers plan_create and plan_track tools for GitLab issue tracking.
+ * Requires work_tracking config in gas-town.jsonc.
+ */
+const GitLabWorkstream: Plugin = async (input: PluginInput): Promise<Hooks> => {
+  const config = loadWorkTrackingConfig(input.directory);
+
+  if (!config || config.enabled === false) {
+    return { tool: {} };
+  }
+
+  return {
+    tool: createPlanTools(config),
+  };
+};
+
+export default ErrorRecovery;
+export { ErrorRecovery, GitLabWorkstream };
