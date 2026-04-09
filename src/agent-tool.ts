@@ -84,11 +84,20 @@ export function createAgentTool(
           return `[gas-town] Session created but no ID returned`;
         }
 
-        // Send prompt with model override
+        // Checkpoint: confirm we reach promptAsync
+        toolContext.metadata({ title: `[gas-town] sending prompt to ${sessionID}`, metadata: { agentName, model } });
+
+        // Send prompt with model override.
+        // Do NOT pass agent name for Gas Town custom agents - opencode only
+        // knows built-in agent names (explore, etc). Unknown names cause
+        // UnknownError on prompt_async. Model routing happens via the model field.
+        const OPENCODE_BUILTIN_AGENTS = ["explore", "coder", "debug", "test", "default"];
+        const agentField = OPENCODE_BUILTIN_AGENTS.includes(agentName) ? agentName : undefined;
+
         const promptResult = await ctx.client.session.promptAsync({
           path: { id: sessionID },
           body: {
-            agent: agentName,
+            ...(agentField ? { agent: agentField } : {}),
             ...(model ? { model } : {}),
             ...(Object.keys(tools).length > 0 ? { tools } : {}),
             parts: [{ type: "text" as const, text: args.prompt }],
@@ -97,7 +106,7 @@ export function createAgentTool(
         });
 
         if (promptResult.error) {
-          return `[gas-town] Prompt error: ${promptResult.error}`;
+          return `[gas-town] Prompt error: ${JSON.stringify(promptResult.error)}`;
         }
 
         // Background mode: return immediately with session ID.
@@ -168,7 +177,7 @@ export function createAgentTool(
 
         return `[gas-town] Agent timed out. Session: ${sessionID}`;
       } catch (e: any) {
-        return `[gas-town] Error: ${e.message}`;
+        return `[gas-town] Error (${e?.constructor?.name}): ${e?.message}\nStack: ${e?.stack?.split('\n').slice(0,3).join(' | ')}`;
       }
     },
   });
