@@ -1,19 +1,21 @@
 /**
  * Gas Town hooks.
  *
- * Three hooks:
- * 1. chat.message    - Inject agent identity from agents/*.md
- * 2. experimental.chat.system.transform - Inject core-rules.md
- * 3. tool.execute.after - Error recovery (JSON truncation, task retry)
+ * Two hooks:
+ * 1. experimental.chat.system.transform - Inject core-rules.md into every session
+ * 2. tool.execute.after - Error recovery (JSON truncation, task retry)
  *
- * Model routing is handled natively by opencode via the `agent`
- * section in opencode.json. No config file needed here.
+ * Agent identity injection is handled natively by opencode via
+ * YAML frontmatter in agents/*.md files. No plugin hook needed.
+ *
+ * Model routing is handled natively by opencode via the `model`
+ * field in agents/*.md frontmatter. No plugin hook needed.
  */
 
 import { existsSync, readFileSync } from "fs";
-import { join, resolve } from "path";
+import { join } from "path";
 
-// ── Core rules loader ────────────────────────────────────────────────
+// ── Core rules loader ─────────────────────────────────────────────────
 
 let coreRulesCache: string | null = null;
 
@@ -37,81 +39,7 @@ function loadCoreRules(projectDir: string): string {
   return coreRulesCache;
 }
 
-// ── Identity loader ───────────────────────────────────────────────────
-
-const identityCache = new Map<string, string>();
-
-function loadAgentIdentity(agentName: string, projectDir: string): string {
-  const cached = identityCache.get(agentName);
-  if (cached !== undefined) return cached;
-
-  // Map agent name to identity file in agents/ directory
-  // Tries: agents/<name>.md, agents/<name>/ directory index
-  const agentsDir = join(projectDir, "agents");
-  const candidates = [
-    join(agentsDir, `${agentName}.md`),
-    // common mapping overrides
-    join(agentsDir, "analytics-insights-mgr.md"),  // librarian
-    join(agentsDir, "developer-advocate.md"),       // oracle
-  ];
-
-  // Direct match first
-  const direct = join(agentsDir, `${agentName}.md`);
-  if (existsSync(direct)) {
-    const content = readFileSync(direct, "utf-8");
-    identityCache.set(agentName, content);
-    return content;
-  }
-
-  // Name mapping: opencode agent names → identity files
-  const nameMap: Record<string, string> = {
-    librarian: "analytics-insights-mgr.md",
-    oracle: "developer-advocate.md",
-    scribe: "technical-writer.md",
-    social: "social-media-mgr.md",
-    sentinel: "fullstack-engineer.md",
-    designer: "ux-designer.md",
-    architect: "solutions-architect.md",
-    reviewer: "quality-reviewer.md",
-  };
-
-  const mapped = nameMap[agentName];
-  if (mapped) {
-    const p = join(agentsDir, mapped);
-    if (existsSync(p)) {
-      const content = readFileSync(p, "utf-8");
-      identityCache.set(agentName, content);
-      return content;
-    }
-  }
-
-  identityCache.set(agentName, "");
-  return "";
-}
-
-// ── Hook: chat.message (identity injection) ───────────────────────────
-
-export function createChatMessageHook(projectDir: string) {
-  return async (
-    input: { sessionID: string; agent?: string },
-    output: { message: any; parts: Array<{ type: string; text?: string }> },
-  ) => {
-    const agentName = input.agent?.toLowerCase?.();
-    if (!agentName || agentName === "paul" || agentName === "build") return;
-
-    const identity = loadAgentIdentity(agentName, projectDir);
-    if (!identity) return;
-
-    const firstTextPart = output.parts.find((p) => p.type === "text" && p.text);
-    if (firstTextPart && firstTextPart.text) {
-      firstTextPart.text =
-        `<agent-identity>\n${identity}\n</agent-identity>\n\n` +
-        firstTextPart.text;
-    }
-  };
-}
-
-// ── Hook: experimental.chat.system.transform (core-rules) ────────────
+// ── Hook: experimental.chat.system.transform ──────────────────────────
 
 export function createSystemTransformHook(projectDir: string) {
   return async (
@@ -135,10 +63,10 @@ const JSON_ERROR_PATTERNS = [
 
 const TASK_ERROR_PATTERNS = [
   {
-    pattern: /Unknown agent type: (\w+) is not a valid agent type/i,
+    pattern: /Unknown agent type: (\S+) is not a valid agent type/i,
     guidance:
-      "[gas-town] Unknown agent type. Check the `agent` section in opencode.json. " +
-      "Agent name must match exactly what is defined there.",
+      "[gas-town] Unknown agent type. Check agents/*.md files and opencode.json. " +
+      "Agent name must match the .md filename exactly.",
   },
 ];
 

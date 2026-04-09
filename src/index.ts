@@ -9,7 +9,6 @@
 
 import type { Plugin, Hooks } from "@opencode-ai/plugin";
 import {
-  createChatMessageHook,
   createSystemTransformHook,
   createToolExecuteAfterHook,
 } from "./hooks.js";
@@ -18,12 +17,8 @@ const GasTown: Plugin = async (input: PluginInput): Promise<Hooks> => {
   const { directory } = input;
 
   return {
-    // Identity injection: prepend agent identity to user messages.
-    // Reads agents/*.md files per agent name. Model routing is handled
-    // natively by opencode via the agent section in opencode.json.
-    "chat.message": createChatMessageHook(directory),
-
-    // System prompt: inject core-rules.md into every session
+    // System prompt: inject core-rules.md into every session.
+    // Agent identity is handled natively by opencode via agents/*.md frontmatter.
     "experimental.chat.system.transform": createSystemTransformHook(directory),
 
     // Error recovery: JSON truncation + delegate-task retry guidance
