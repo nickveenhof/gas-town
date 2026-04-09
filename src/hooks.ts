@@ -133,6 +133,15 @@ export function createChatMessageHook(
     const agentConfig = findAgentConfig(config, agentName);
     if (!agentConfig) return;
 
+    // Model routing: override model via output.message.model
+    // This is how opencode reads per-agent model overrides.
+    if (agentConfig.model) {
+      const parsed = parseModelString(agentConfig.model);
+      if (parsed && output.message) {
+        output.message.model = parsed;
+      }
+    }
+
     // Inject identity into the first text part
     const identity = getIdentity(agentConfig, projectDir);
     if (!identity) return;
