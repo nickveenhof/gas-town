@@ -135,18 +135,21 @@ export function createAgentTool(
           if (currentCount > 0 && currentCount === lastMsgCount) {
             stablePolls++;
             if (stablePolls >= STABILITY_REQUIRED) {
-              // Done. Extract last assistant message.
-              const assistantMsgs = msgs.filter((m: any) => m.role === "assistant");
-              const lastMsg = assistantMsgs[assistantMsgs.length - 1];
-              if (lastMsg?.parts) {
-                const text = lastMsg.parts
-                  .filter((p: any) => p.type === "text")
-                  .map((p: any) => p.text)
-                  .join("\n");
-                return (text || "[gas-town] Agent completed but returned no text") +
-                  `\n\n<task_metadata>\nsession_id: ${sessionID}\n</task_metadata>`;
+              // Done. Role is at m.info.role, not m.role.
+              const assistantMsgs = msgs.filter(
+                (m: any) => m.info?.role === "assistant" || m.info?.role === "tool",
+              );
+              const extractedContent: string[] = [];
+              for (const msg of assistantMsgs) {
+                for (const part of msg.parts ?? []) {
+                  if ((part.type === "text" || part.type === "reasoning") && part.text) {
+                    extractedContent.push(part.text);
+                  }
+                }
               }
-              return `[gas-town] Agent completed. Session: ${sessionID}`;
+              const text = extractedContent.filter(Boolean).join("\n");
+              return (text || "[gas-town] Agent completed but returned no text") +
+                `\n\n<task_metadata>\nsession_id: ${sessionID}\n</task_metadata>`;
             }
           } else {
             stablePolls = 0;
